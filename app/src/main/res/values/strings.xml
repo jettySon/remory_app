@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">리모리</string>
+    <string name="connection_title">리모리에 연결하지 못했어요</string>
+    <string name="connection_hint">인터넷 연결을 확인하고 다시 시도해 주세요.</string>
+    <string name="connection_hint_debug">컴퓨터에서 리모리 웹 서버를 실행해 주세요. 실제 휴대폰은 USB 연결 후 adb reverse 설정이 필요해요.</string>
+    <string name="retry">다시 연결하기</string>
+    <string name="open_browser">브라우저로 열기</string>
+    <string name="file_unavailable">파일 선택 앱을 열 수 없어요.</string>
+    <string name="download_started">파일 다운로드를 시작했어요.</string>
+    <string name="download_failed">파일을 다운로드하지 못했어요.</string>
+    <string name="link_unavailable">이 링크를 열 수 없어요.</string>
+</resources>

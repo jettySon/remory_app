@@ -1,0 +1,57 @@
+import groovy.json.JsonOutput
+
+plugins { id 'com.android.application' }
+
+def debugUrl = providers.gradleProperty('remoryDebugUrl').getOrElse('http://localhost:5173/')
+def releaseUrl = providers.gradleProperty('remoryUrl').getOrElse('')
+def validateUrl = { String value, boolean release ->
+    def uri = new URI(value)
+    if (!uri.host || uri.userInfo || uri.query || uri.fragment ||
+        !(uri.path in ['', '/']) || !(uri.scheme in (release ? ['https'] : ['http', 'https']))) {
+        throw new GradleException('리모리 주소는 경로·인증 정보 없는 사이트 원본 주소여야 합니다. 배포 빌드는 HTTPS가 필요합니다.')
+    }
+}
+validateUrl(debugUrl, false)
+
+android {
+    namespace 'com.remory.app'
+    compileSdk 37
+    defaultConfig {
+        applicationId 'com.remory.app'
+        minSdk 26
+        targetSdk 36
+        versionCode 1
+        versionName '0.1.0'
+    }
+    buildFeatures { buildConfig true }
+    buildTypes {
+        debug {
+            buildConfigField 'String', 'WEB_URL', JsonOutput.toJson(debugUrl)
+        }
+        release {
+            buildConfigField 'String', 'WEB_URL', JsonOutput.toJson(releaseUrl)
+            minifyEnabled false
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+tasks.register('validateReleaseUrl') {
+    doLast {
+        if (!releaseUrl) throw new GradleException('배포 주소가 필요합니다: -PremoryUrl=https://실제도메인/')
+        validateUrl(releaseUrl, true)
+    }
+}
+tasks.matching { it.name == 'preReleaseBuild' }.configureEach { dependsOn 'validateReleaseUrl' }
+
+dependencies {
+    implementation 'androidx.activity:activity:1.10.1'
+    implementation 'androidx.webkit:webkit:1.12.1'
+    implementation 'androidx.credentials:credentials:1.5.0'
+    implementation 'androidx.credentials:credentials-play-services-auth:1.5.0'
+    implementation 'com.google.android.libraries.identity.googleid:googleid:1.1.1'
+    testImplementation 'junit:junit:4.13.2'
+}
