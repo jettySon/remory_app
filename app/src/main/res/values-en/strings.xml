@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="review_reminders">Review reminders</string>
+    <string name="reminder_title">Today’s review</string>
+    <string name="reminder_body">Cards are ready to review. Choose a deck to begin.</string>
+</resources>

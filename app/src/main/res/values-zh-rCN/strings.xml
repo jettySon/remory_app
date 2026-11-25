@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="review_reminders">复习提醒</string>
+    <string name="reminder_title">今日复习</string>
+    <string name="reminder_body">有卡片可以复习。选一个卡组开始吧。</string>
+</resources>

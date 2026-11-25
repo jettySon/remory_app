@@ -1,5 +1,6 @@
 package com.remory.app;
 
+import android.Manifest;
 import android.app.DownloadManager;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
@@ -9,6 +10,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.CancellationSignal;
 import android.os.Environment;
+import android.provider.Settings;
 import android.view.Gravity;
 import android.view.View;
 import android.view.WindowInsets;
@@ -32,6 +34,8 @@ import android.widget.Toast;
 
 import androidx.activity.ComponentActivity;
 import androidx.activity.OnBackPressedCallback;
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
 
 import androidx.credentials.CredentialManager;
 import androidx.credentials.CredentialManagerCallback;
@@ -48,7 +52,9 @@ import androidx.webkit.WebViewFeature;
 import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption;
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential;
 
+import org.json.JSONException;
 import org.json.JSONObject;
+import java.time.LocalTime;
 import java.util.Arrays;
 import java.util.Collections;
 
@@ -63,6 +69,29 @@ public final class MainActivity extends ComponentActivity {
     private CancellationSignal googleRequest;
     private int documentGeneration;
     private boolean pageFailed;
+    private String launchUrl = BuildConfig.WEB_URL;
+    private ReminderPermission reminderPermission;
+    private static final class ReminderPermission {
+        final String id;
+        final LocalTime time;
+        final JavaScriptReplyProxy reply;
+        final int generation;
+
+        ReminderPermission(String id, LocalTime time, JavaScriptReplyProxy reply, int generation) {
+            this.id = id;
+            this.time = time;
+            this.reply = reply;
+            this.generation = generation;
+        }
+    }
+    private final ActivityResultLauncher<String> notificationPermission =
+            registerForActivityResult(new ActivityResultContracts.RequestPermission(), granted -> {
+                var request = reminderPermission;
+                reminderPermission = null;
+                if (request == null) return;
+                ReviewReminders.save(this, granted && ReviewReminders.allowed(this), request.time);
+                if (request.generation == documentGeneration) replyReminderSettings(request.reply, request.id);
+            });
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
@@ -89,7 +118,21 @@ public final class MainActivity extends ComponentActivity {
         getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
             @Override public void handleOnBackPressed() { handleBack(); }
         });
-        if (state == null || webView.restoreState(state) == null) webView.loadUrl(BuildConfig.WEB_URL);
+        if (openReviewFrom(getIntent()) || state == null || webView.restoreState(state) == null) webView.loadUrl(launchUrl);
+    }
+
+    @Override protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        if (openReviewFrom(intent)) webView.loadUrl(launchUrl);
+    }
+
+    private boolean openReviewFrom(Intent intent) {
+        if (!ReviewReminders.OPEN_REVIEW.equals(intent.getAction())) return false;
+        intent.setAction(Intent.ACTION_MAIN);
+        ReviewReminders.dismiss(this);
+        launchUrl = Uri.parse(BuildConfig.WEB_URL).buildUpon().appendQueryParameter("review", "scheduled").build().toString();
+        return true;
     }
 
     private void createWebView() {
@@ -108,7 +151,7 @@ public final class MainActivity extends ComponentActivity {
         settings.setUserAgentString(settings.getUserAgentString() + " RemoryAndroid/" + BuildConfig.VERSION_NAME);
         CookieManager.getInstance().setAcceptCookie(true);
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, false);
-        installGoogleBridge();
+        installBridge();
 
         webView.setWebViewClient(new WebViewClient() {
             @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
@@ -129,6 +172,7 @@ public final class MainActivity extends ComponentActivity {
                 CookieManager.getInstance().flush();
                 // onPageFinished is also called for an error document. Keep its retry screen visible.
                 if (pageFailed) errorPanel.setVisibility(View.VISIBLE);
+                else launchUrl = BuildConfig.WEB_URL;
             }
             @Override public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
                 if (request.isForMainFrame()) showConnectionError();
@@ -168,7 +212,7 @@ public final class MainActivity extends ComponentActivity {
         webView.setDownloadListener((url, agent, disposition, mime, length) -> download(url, agent, disposition, mime));
     }
 
-    private void installGoogleBridge() {
+    private void installBridge() {
         if (!WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) return;
         WebViewCompat.addWebMessageListener(webView, "RemoryAndroid", Collections.singleton(SitePolicy.origin(BuildConfig.WEB_URL)),
             (view, message, origin, mainFrame, reply) -> {
@@ -177,7 +221,10 @@ public final class MainActivity extends ComponentActivity {
                 try {
                     JSONObject request = new JSONObject(message.getData());
                     String id = request.getString("id");
-                    if (!"googleSignIn".equals(request.optString("type"))) return;
+                    if (!"googleSignIn".equals(request.optString("type"))) {
+                        handleReminders(request, id, reply);
+                        return;
+                    }
                     if (googleRequest != null) { reply(reply, id, null, "BUSY"); return; }
                     String clientId = request.getString("clientId");
                     String nonce = request.getString("nonce");
@@ -190,6 +237,45 @@ public final class MainActivity extends ComponentActivity {
                     // No unvalidated input, credentials, or account information is written to logs.
                 }
             });
+    }
+
+    private void handleReminders(JSONObject request, String id, JavaScriptReplyProxy reply) throws JSONException {
+        switch (request.optString("type")) {
+            case "reminderSettings" -> replyReminderSettings(reply, id);
+            case "setReminder" -> {
+                String time = request.getString("time");
+                if (!time.matches("(?:[01][0-9]|2[0-3]):[0-5][0-9]")) return;
+                LocalTime parsed = LocalTime.parse(time);
+                boolean enable = request.getBoolean("enabled");
+                if (enable && Build.VERSION.SDK_INT >= 33 &&
+                        checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                    if (reminderPermission != null) { reply(reply, id, null, "BUSY"); return; }
+                    reminderPermission = new ReminderPermission(id, parsed, reply, documentGeneration);
+                    notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS);
+                    return;
+                }
+                ReviewReminders.save(this, enable && ReviewReminders.allowed(this), parsed);
+                replyReminderSettings(reply, id);
+            }
+            case "syncReminder" -> {
+                String source = request.getString("source");
+                String locale = request.getString("locale");
+                long dueAt = request.isNull("dueAt") ? Long.MAX_VALUE : request.getLong("dueAt");
+                if (("guest".equals(source) || "account".equals(source))
+                        && ("ko".equals(locale) || "en".equals(locale) || "ja".equals(locale) || "zh-CN".equals(locale))) {
+                    ReviewReminders.sync(this, source, dueAt, locale);
+                }
+            }
+            case "openReminderSettings" -> startActivity(new Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                    .putExtra(Settings.EXTRA_APP_PACKAGE, getPackageName()));
+            default -> { }
+        }
+    }
+
+    private void replyReminderSettings(JavaScriptReplyProxy reply, String id) {
+        if (isDestroyed() || !SitePolicy.isSameOrigin(BuildConfig.WEB_URL, webView.getUrl())) return;
+        try { reply.postMessage(new JSONObject().put("id", id).put("reminder", ReviewReminders.settings(this)).toString()); }
+        catch (JSONException ignored) { }
     }
 
     private void signInWithGoogle(String id, String clientId, String nonce, JavaScriptReplyProxy reply) {
@@ -273,7 +359,7 @@ public final class MainActivity extends ComponentActivity {
         errorPanel.addView(hint);
         Button retry = new Button(this);
         retry.setText(R.string.retry);
-        retry.setOnClickListener(view -> webView.loadUrl(BuildConfig.WEB_URL));
+        retry.setOnClickListener(view -> webView.loadUrl(launchUrl));
         errorPanel.addView(retry);
         Button browser = new Button(this);
         browser.setText(R.string.open_browser);
@@ -328,7 +414,11 @@ public final class MainActivity extends ComponentActivity {
         webView.saveState(state);
         super.onSaveInstanceState(state);
     }
-    @Override protected void onResume() { super.onResume(); webView.onResume(); }
+    @Override protected void onResume() {
+        super.onResume();
+        webView.onResume();
+        ReviewReminders.ensureScheduled(this);
+    }
     @Override protected void onPause() { CookieManager.getInstance().flush(); webView.onPause(); super.onPause(); }
     @Override protected void onDestroy() {
         documentGeneration++;

@@ -10,4 +10,7 @@
     <string name="download_started">파일 다운로드를 시작했어요.</string>
     <string name="download_failed">파일을 다운로드하지 못했어요.</string>
     <string name="link_unavailable">이 링크를 열 수 없어요.</string>
+    <string name="review_reminders">복습 알림</string>
+    <string name="reminder_title">오늘의 복습</string>
+    <string name="reminder_body">복습할 카드가 있어요. 덱을 골라 복습해 볼까요?</string>
 </resources>

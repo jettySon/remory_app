@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="review_reminders">復習の通知</string>
+    <string name="reminder_title">今日の復習</string>
+    <string name="reminder_body">復習できるカードがあります。デッキを選んで始めましょう。</string>
+</resources>
