@@ -31,10 +31,10 @@ Google 계정 선택창은 함께 적용한 프런트엔드의 `src/platform/and
 
 ## 배포할 때
 
-웹과 백엔드를 같은 HTTPS 도메인에 배포한 뒤 아래처럼 주소를 지정합니다.
+운영 빌드는 `gradle.properties`의 `https://remory.kr/`을 사용합니다. 별도 HTTPS 테스트 서버가 필요하면 `-PremoryUrl=https://테스트주소/`로 바꿀 수 있습니다.
 
 ```sh
-./gradlew :app:bundleRelease -PremoryUrl=https://실제도메인/
+./gradlew :app:bundleRelease
 ```
 
 배포 주소를 비워 두거나 HTTP로 지정하면 배포 빌드가 실패합니다. 운영 버전은 HTTP를 허용하지 않고 WebView 디버깅과 앱 데이터 자동 백업을 끕니다. 실제 스토어 제출 전에는 Android Studio의 **Generate Signed App Bundle**에서 배포 키로 서명해야 합니다. 서명 키는 저장소에 포함하지 않습니다. 이 프로젝트는 아직 스토어에 게시되지 않았습니다.
